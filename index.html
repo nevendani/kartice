@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#3b6fd4"><title>Kartice sa slikom</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#222;--card:#3b6fd4;--cardfg:#fff;--panel:#fff;--ok:#2e9e5b;--no:#d64545;--line:#ccc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1c1f;--fg:#eee;--card:#4a7be0;--panel:#2b2b30;--line:#555}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,sans-serif;text-align:center;padding:12px}
+h1{font-size:20px;margin:8px 0}
+#info{margin:4px 0 10px;font-size:14px}
+#board{position:relative;margin:0 auto;border-radius:12px;overflow:hidden;background-size:100% 100%;background-position:center;max-width:100%}
+#grid{position:absolute;inset:0;display:grid}
+.card{background:var(--card);color:var(--cardfg);border:1px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;transition:opacity .6s,transform .6s;user-select:none}
+.card.free{background:#7a5bd4}
+.card.gone{opacity:0;transform:scale(.6);pointer-events:none}
+#win{display:none;margin:12px;font-size:20px;font-weight:700;color:var(--ok)}
+details{max-width:520px;margin:16px auto;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;align-items:center}
+.row label{font-size:13px;display:flex;flex-direction:column;gap:3px}
+input[type=number]{width:90px;padding:6px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg)}
+textarea{width:100%;height:260px;padding:8px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);font:13px/1.4 monospace}
+.btn{padding:8px 12px;border-radius:8px;border:0;background:var(--card);color:#fff;cursor:pointer;font-size:14px}
+.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.small{font-size:12px;opacity:.7;margin:4px 0}
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:9}
+#scene{perspective:900px;width:min(92vw,360px);height:380px;text-align:center}
+#flipper{position:relative;width:100%;height:100%;transition:transform .6s;transform-style:preserve-3d}
+#flipper.flipped{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:var(--panel);border-radius:14px;padding:18px;display:flex;flex-direction:column;justify-content:center;gap:10px;overflow:auto}
+.back{transform:rotateY(180deg)}
+#q{font-size:19px;font-weight:600}
+.hint{font-size:13px;opacity:.6}
+.ans{font-size:15px;padding:12px;border-radius:10px;border:2px solid var(--card);background:transparent;color:var(--fg);cursor:pointer}
+.ans.bad{background:var(--no);border-color:var(--no);color:#fff;animation:sh .3s}
+@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+#x{position:absolute;top:6px;right:10px;background:none;border:0;font-size:22px;color:var(--fg);cursor:pointer}
+</style>
+</head>
+<body>
+<h1 id="title">Kartice sa slikom</h1>
+<div id="info">Tačno odgovori da otkriješ sliku. Preostalo: <b id="left">0</b></div>
+<div id="board"><div id="grid"></div></div>
+<div id="win">Bravo! Otkrio/la si celu sliku! 🎉</div>
+
+<details id="settings">
+  <summary>⚙ Podešavanja</summary>
+  <div class="row">
+    <label>Kolona<input type="number" id="cols" min="1" max="12"></label>
+    <label>Redova<input type="number" id="rows" min="1" max="20"></label>
+    <label>Širina table (px)<input type="number" id="bw" min="150" max="900" step="10"></label>
+    <label>Visina table (px)<input type="number" id="bh" min="150" max="1200" step="10"></label>
+  </div>
+  <div class="row">
+    <button class="btn" id="pickGal">🖼 Galerija</button><button class="btn" id="pickCam">📷 Fotoaparat</button><input type="file" id="fileGal" accept="image/*" hidden><input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+    <button class="btn alt" id="resetImg">Podrazumevana slika</button>
+  </div>
+  <div class="small" id="imgmsg"></div>
+  <div class="small">Broj kartica = kolone × redovi. Veličina kartice zavisi od širine i visine table. Višak polja su ljubičaste kartice bez pitanja (otvaraju se jednim klikom).</div>
+  <div class="small" id="cardsize"></div><div class="small" id="gridmsg"></div>
+  <div class="row"><b>Pitanja i odgovori</b></div>
+  <div class="small">Svako pitanje je blok od redova, blokovi se odvajaju praznim redom:<br>1. red = pitanje, 2. red = TAČAN odgovor, ostali redovi = netačni odgovori.</div>
+  <textarea id="qtext"></textarea>
+  <div class="row">
+    <button class="btn" id="apply">Primeni i počni ispočetka</button>
+    <button class="btn alt" id="reset">Vrati sve na početno</button>
+  </div>
+</details>
+
+<div id="modal">
+  <div id="scene"><div id="flipper">
+    <div class="face front" id="front"><div id="q"></div><div class="hint">Dodirni karticu da vidiš odgovore</div></div>
+    <div class="face back" id="back"></div>
+  </div></div>
+</div>
+
+<script>
+/* ============ 1. PODRAZUMEVANI PODACI (ovde možeš dodavati pitanja) ============ */
+var DEFAULTS={
+  title:"Uzajamno delovanje i trenje",
+  cols:3, rows:4, boardW:420, boardH:560,
+  image:"", // prazno = ugrađena slika
+  questions:[
+    {q:"Šta se u stvarnosti najčešće dešava sa brzinom kod većine kretanja?",a:"Brzina je najčešće promenljiva, a ravnomerno kretanje se retko ostvaruje.",w:["Brzina je uvek stalna tokom celog kretanja.","Brzina je uvek jednaka nuli."]},
+    {q:"Šta je potrebno da bi se promenila brzina nekog tela?",a:"Delovanje na to telo, na primer guranjem, povlačenjem ili udarcem.",w:["Ništa, brzina se menja sama od sebe.","Telo mora da bude što teže."]},
+    {q:"Šta znači da je delovanje između tela pri dodiru uzajamno?",a:"Kada jedno telo deluje na drugo, istovremeno i drugo telo deluje na prvo.",w:["Samo jače telo deluje na slabije.","Deluje samo telo koje se kreće."]},
+    {q:"Šta je trenje?",a:"Opiranje kretanju jednog tela u odnosu na drugo pri njihovom kontaktu.",w:["Pojava kada telo ubrzava bez ikakvog delovanja.","Sila koja telo uvek pokreće napred."]},
+    {q:"Zašto se kliker posle udarca vremenom uspori i zaustavi?",a:"Podloga deluje na njega trenjem i smanjuje mu brzinu.",w:["Kliker se umori.","Vazduh ga gura nazad jače nego podloga."]},
+    {q:"Po kojoj podlozi kliker prelazi najkraći put, a po kojoj najduži?",a:"Najkraći po pesku, a najduži po staklu.",w:["Najkraći po staklu, a najduži po pesku.","Put je isti na svim podlogama."]},
+    {q:"Šta je trenje kotrljanja?",a:"Trenje koje se javlja kada se jedno telo kotrlja po podlozi.",w:["Trenje koje se javlja dok telo miruje.","Trenje pri klizanju jednog tela preko drugog."]},
+    {q:"Šta je trenje klizanja i od čega zavisi?",a:"Trenje pri klizanju jednog tela preko drugog; zavisi od osobina dodirnih površina.",w:["Trenje pri kotrljanju; zavisi samo od boje tela.","Trenje koje postoji samo u vazduhu."]},
+    {q:"Šta je trenje mirovanja i kada prestaje?",a:"Javlja se kad počnemo da delujemo na telo koje se još nije pomerilo; traje dok se telo ne pokrene.",w:["Javlja se samo dok se telo kotrlja.","Nikada ne prestaje, ni kada se telo kreće."]},
+    {q:"Šta je glavni uzrok trenja na mestu dodira tela i podloge?",a:"Sitne neravnine na dodirnim površinama.",w:["Magnetno privlačenje tela i podloge.","Boja površina."]},
+    {q:"Koje je trenje veće: klizanja ili kotrljanja?",a:"Trenje klizanja je veće od trenja kotrljanja.",w:["Trenje kotrljanja je veće od trenja klizanja.","Oba su uvek potpuno ista."]},
+    {q:"Šta se dešava sa trenjem kada su dodirne površine uglačanije?",a:"Trenje je manje.",w:["Trenje je veće.","Trenje se ne menja nikako."]}
+  ]
+};
+var SVG="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400' preserveAspectRatio='xMidYMid slice'><defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%2377b9ff'/><stop offset='1' stop-color='%23d6ecff'/></linearGradient><radialGradient id='m' cx='.35' cy='.3'><stop offset='0' stop-color='%23fff'/><stop offset='.25' stop-color='%23ff6b6b'/><stop offset='1' stop-color='%23a31515'/></radialGradient><radialGradient id='b' cx='.35' cy='.3'><stop offset='0' stop-color='%23fff'/><stop offset='.3' stop-color='%234f9dff'/><stop offset='1' stop-color='%231a3f8f'/></radialGradient></defs><rect width='300' height='400' fill='url(%23s)'/><circle cx='235' cy='70' r='34' fill='%23ffd84a'/><path d='M0 230 Q80 170 160 225 T300 210 V400 H0Z' fill='%236cc070'/><path d='M0 290 Q150 250 300 295 V400 H0Z' fill='%23e8cf8e'/><ellipse cx='150' cy='330' rx='85' ry='14' fill='rgba(0,0,0,.2)'/><circle cx='150' cy='285' r='55' fill='url(%23m)'/><ellipse cx='60' cy='370' rx='26' ry='5' fill='rgba(0,0,0,.2)'/><circle cx='60' cy='355' r='22' fill='url(%23b)'/><ellipse cx='245' cy='375' rx='20' ry='4' fill='rgba(0,0,0,.2)'/><circle cx='245' cy='362' r='17' fill='url(%23b)'/></svg>";
+var DEFAULT_IMG='data:image/svg+xml,'+SVG;
+
+/* ============ 2. STANJE I ČUVANJE ============ */
+var KEY="kartice-v3", S=load();
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function load(){try{var s=localStorage.getItem(KEY);if(s)return JSON.parse(s)}catch(e){}return clone(DEFAULTS)}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function $(id){return document.getElementById(id)}
+
+/* ============ 3. PRETVARANJE TEKSTA <-> PITANJA ============ */
+function toText(qs){return qs.map(function(x){return [x.q,x.a].concat(x.w).join("\n")}).join("\n\n")}
+function fromText(t){
+  return t.split(/\n\s*\n/).map(function(b){
+    var l=b.split("\n").map(function(s){return s.trim()}).filter(Boolean);
+    return l.length>=3?{q:l[0],a:l[1],w:l.slice(2)}:null;
+  }).filter(Boolean);
+}
+
+/* ============ 4. TABLA ============ */
+var cards=[],solved=0,total=0,cur=-1;
+function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
+
+function buildBoard(){
+  var cols=Math.max(1,S.cols|0), rows=Math.max(1,S.rows|0||Math.ceil(S.questions.length/cols));
+  total=cols*rows; var n=Math.min(S.questions.length,total); solved=0; cards=[];
+  $("gridmsg").textContent=S.questions.length>total?"Pažnja: ima "+S.questions.length+" pitanja, a samo "+total+" polja. Višak pitanja se ne koristi. Povećaj redove ili kolone.":(S.questions.length<total?"Ima "+(total-S.questions.length)+" ljubičastih kartica bez pitanja (★).":"");
+  $("cardsize").textContent="Jedna kartica: oko "+Math.round(S.boardW/cols)+" × "+Math.round(S.boardH/rows)+" px";
+  var board=$("board"), grid=$("grid");
+  board.style.width=S.boardW+"px";
+  board.style.aspectRatio=S.boardW+" / "+S.boardH;
+  board.style.backgroundImage='url("'+(S.image||DEFAULT_IMG)+'")';
+  grid.innerHTML="";
+  grid.style.gridTemplateColumns="repeat("+cols+",1fr)";
+  grid.style.gridTemplateRows="repeat("+rows+",1fr)";
+  var cellH=S.boardH/rows, fs=Math.max(12,Math.min(30,cellH/3))+"px";
+  for(var i=0;i<total;i++){(function(i){
+    var c=document.createElement("div");
+    c.className="card"+(i>=n?" free":"");
+    c.style.fontSize=fs;
+    c.textContent=i<n?i+1:"★";
+    c.onclick=function(){i<n?openCard(i):reveal(i)};
+    grid.appendChild(c);cards.push(c);
+  })(i)}
+  $("title").textContent=S.title||"Kartice sa slikom";
+  $("left").textContent=total;
+  $("win").style.display="none";
+}
+function reveal(i){
+  cards[i].classList.add("gone");solved++;
+  $("left").textContent=total-solved;
+  if(solved===total)$("win").style.display="block";
+}
+
+/* ============ 5. KARTICA SA PITANJEM ============ */
+var modal=$("modal"),flipper=$("flipper");
+function openCard(i){
+  cur=i;var item=S.questions[i];
+  $("q").textContent=item.q;
+  var back=$("back");back.innerHTML='<button id="x">✕</button>';
+  shuffle([item.a].concat(item.w)).forEach(function(t){
+    var b=document.createElement("button");
+    b.className="ans";b.textContent=t;
+    b.onclick=function(e){e.stopPropagation();
+      if(t===item.a){closeModal();reveal(cur)}else{b.classList.add("bad");b.disabled=true}};
+    back.appendChild(b);
+  });
+  $("x").onclick=function(e){e.stopPropagation();closeModal()};
+  flipper.className="";modal.style.display="flex";
+}
+function closeModal(){modal.style.display="none";flipper.className=""}
+$("front").onclick=function(){flipper.className="flipped"};
+modal.onclick=function(e){if(e.target===modal)closeModal()};
+
+/* ============ 6. PODEŠAVANJA ============ */
+function fillForm(){
+  $("cols").value=S.cols;$("rows").value=S.rows;$("bw").value=S.boardW;$("bh").value=S.boardH;
+  $("qtext").value=toText(S.questions);
+}
+$("apply").onclick=function(){
+  var qs=fromText($("qtext").value);
+  if(!qs.length){alert("Treba bar jedno pitanje (pitanje, tačan i bar jedan netačan odgovor).");return}
+  S.questions=qs;
+  S.cols=Math.max(1,parseInt($("cols").value)||3);
+  S.rows=Math.max(1,parseInt($("rows").value)||4);
+  S.boardW=Math.max(150,parseInt($("bw").value)||420);
+  S.boardH=Math.max(150,parseInt($("bh").value)||560);
+  save();buildBoard();
+};
+$("reset").onclick=function(){if(confirm("Vratiti sve na početno?")){S=clone(DEFAULTS);save();fillForm();buildBoard()}};
+$("resetImg").onclick=function(){S.image="";save();buildBoard()};
+$("pickGal").onclick=function(){$("fileGal").click()};
+$("pickCam").onclick=function(){$("fileCam").click()};
+$("fileGal").onchange=$("fileCam").onchange=function(e){
+  var f=e.target.files[0];if(!f)return;
+  var msg=$("imgmsg");msg.textContent="Učitavam...";
+  var r=new FileReader();
+  r.onerror=function(){msg.textContent="Greška pri čitanju fajla."};
+  r.onload=function(){
+    var im=new Image();
+    im.onerror=function(){msg.textContent="Ovaj format slike nije podržan, probaj JPG ili PNG."};
+    im.onload=function(){
+      // smanji veliku sliku da stane u memoriju
+      var k=Math.min(1,1400/Math.max(im.width,im.height)),c=document.createElement("canvas");
+      c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+      c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+      S.image=c.toDataURL("image/jpeg",0.85);
+      save();buildBoard();msg.textContent="Slika je postavljena.";
+    };
+    im.src=r.result;
+  };
+  r.readAsDataURL(f);
+  e.target.value="";
+};
+
+fillForm();buildBoard();
+try{if("serviceWorker" in navigator&&location.protocol.indexOf("http")==0)navigator.serviceWorker.register("sw.js")}catch(e){}
+</script>
+</body>
+</html>
